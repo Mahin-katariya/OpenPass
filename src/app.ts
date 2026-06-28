@@ -1,10 +1,11 @@
 import type {Express} from 'express'
 import express from 'express'
-import { errorHandler } from './middleware/error-handler.js';
 import type {Request, Response} from 'express'
+import { errorHandler } from './middleware/error-handler.js';
+
+import registerRoutes from './routes/register.routes.js'
+
 export const app: Express = express();
-import APIError from './utils/APIErrors.js';
-import type { REPLCommand } from 'node:repl';
 app.use(express.json());
 
 // test routes
@@ -20,4 +21,5 @@ app.get('/',(req,res) => {
     res.send("Authentication server");
 })
 
+app.use('/api/auth/v1',registerRoutes);
 app.use(errorHandler);
