@@ -1,64 +1,4 @@
-import type { Request, Response } from "express";
-import bcrypt from 'bcryptjs'
-
-import APIError from "../utils/APIErrors.js";
-import APIResponse from "../utils/APIResponse.js";
-import { findUserByEmail, createUser } from "../services/user.services.js";
-import { createClient, findClientById } from "../services/client.services.js";
-
-
-
-export async function registerUser(req: Request, res: Response){
-    const {name, email, password} = req.body;
-
-    // check if received the required data
-    if(!name || !email || !password) throw APIError.badRequestError('MISSING_FIELDS');
-
-    // check if user exists or not by calling findUserByEmail 
-    const existing = findUserByEmail(email);
-    if(existing) throw APIError.conflictError("EMAIL_ALREADY_EXISTS");
-
-    // if does not exist we first hash the password and then create the user by calling createUser
-    const password_hash = await bcrypt.hash(password, 10);
-    const user = createUser(name, email, password_hash);
-
-    // send the response back to the client
-    const response = new APIResponse(201, user,"USER_REGISTERED_SUCCESSFULLY");
-    return res.status(response.statusCode).json(response);
-}
-
-export async function registerClient(req: Request, res: Response){
-    const {clientName, redirectUri} = req.body;
-    // check if received the required fields
-    if(!clientName || !redirectUri) throw APIError.badRequestError("MISSING_FIELDS");
-    // if received then pass it to the service to store the details
-    const client = await createClient(clientName, redirectUri);
-    console.log("client data:", client);
-    
-    const response = new APIResponse(201, client, "CLIENT_REGISTERED_SUCCESSFULLY");
-
-    return res.status(201).json(response);
-}
-
-export function authorizeClient(req: Request, res: Response){
-    const {client_id, redirect_uri, response_type, state} = req.query;
-
-    if(response_type !== "code") throw APIError.badRequestError("UNSUPPORTED_RESPONSE_TYPE")
-
-    if(!client_id || !redirect_uri || !state) throw APIError.badRequestError("MISSING_PARAMS");
-    const existingClient  = findClientById(client_id as string);
-
-    if(!existingClient) throw APIError.notFoundError("INVALID_CLIENT");
-
-    const registerRedirectedUri: string[] = JSON.parse(existingClient.redirect_uri);
-    console.log("registered redirect_uri: ", registerRedirectedUri);
-
-    const existsUri = registerRedirectedUri.some((uri) => redirect_uri === uri);
-
-    if(!existsUri) throw APIError.unAuthorizedError("INVALID_REDIRECT_URI");
-
-    return res.send(`
-        <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -360,9 +300,9 @@ export function authorizeClient(req: Request, res: Response){
         </div>
         
 
-        <h1 style="margin-top: 40px; font-size: 26px;">Sign in to ${existingClient.client_name}</h1>
+        <h1 style="margin-top: 40px; font-size: 26px;">Sign in to ${client_name}</h1>
 
-        <h2>OpenPass will allow ${existingClient.client_name} to access info like email, name. Your password will not be revealed</h2>
+        <h2>OpenPass will allow ${client_name} to access info like email, name. Your password will not be revealed</h2>
         <form method="POST" action="/login">
                 <input type="hidden" name="client_id" value="${client_id}">
                 <input type="hidden" name="redirect_uri" value="${redirect_uri}">
@@ -375,6 +315,3 @@ export function authorizeClient(req: Request, res: Response){
     </div>
 </body>
 </html>
-        `)
-}
-

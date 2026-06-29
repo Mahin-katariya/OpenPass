@@ -10,15 +10,15 @@ let query = `
         name TEXT NOT NULL,
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        created_at DATETIME NOT NULL
+        created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS clients(
-        client_id INTEGER PRIMARY KEY,
+        client_id TEXT PRIMARY KEY,
         client_name TEXT NOT NULL,
         client_secret_hash TEXT NOT NULL,
         redirect_uri TEXT NOT NULL,
-        created_at DATETIME NOT NULL
+        created_at TEXT NOT NULL
     );
     
     CREATE TABLE IF NOT EXISTS auth_codes(
@@ -26,20 +26,20 @@ let query = `
         code_hash TEXT NOT NULL,
         redirect_uri TEXT NOT NULL,
         state TEXT NOT NULL,
-        created_at DATETIME NOT NULL,
-        expires_at DATETIME NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
 
-        client_id INTEGER REFERENCES clients(client_id),
+        client_id TEXT REFERENCES clients(client_id),
         user_id INTEGER REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS refresh_tokens(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         token_hash TEXT NOT NULL,
-        created_at DATETIME NOT NULL,
-        expires_at DATETIME NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
 
-        client_id INTEGER REFERENCES clients(client_id),
+        client_id TEXT REFERENCES clients(client_id),
         user_id INTEGER REFERENCES users(id)
     );
 
@@ -49,7 +49,7 @@ let query = `
         public_key TEXT NOT NULL,
         private_key TEXT NOT NULL,
         is_active BOOLEAN NOT NULL,
-        created_at DATETIME NOT NULL
+        created_at TEXT NOT NULL
     );
 `;
 

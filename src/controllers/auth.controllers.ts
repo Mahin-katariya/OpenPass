@@ -3,44 +3,14 @@ import bcrypt from 'bcryptjs'
 
 import APIError from "../utils/APIErrors.js";
 import APIResponse from "../utils/APIResponse.js";
-import { findUserByEmail, createUser } from "../services/user.services.js";
-import { createClient, findClientById } from "../services/client.services.js";
+import { findUserByEmail, findUserById } from "../services/user.services.js";
+import { findClientById } from "../services/client.services.js";
+import { generateAuthCode, verifyAuthCode } from "../services/code.service.js";
+import { getActiveKey } from "../services/key.service.js";
+import { hash } from "../utils/hash.js";
+import jwt from "jsonwebtoken";
 
-
-
-export async function registerUser(req: Request, res: Response){
-    const {name, email, password} = req.body;
-
-    // check if received the required data
-    if(!name || !email || !password) throw APIError.badRequestError('MISSING_FIELDS');
-
-    // check if user exists or not by calling findUserByEmail 
-    const existing = findUserByEmail(email);
-    if(existing) throw APIError.conflictError("EMAIL_ALREADY_EXISTS");
-
-    // if does not exist we first hash the password and then create the user by calling createUser
-    const password_hash = await bcrypt.hash(password, 10);
-    const user = createUser(name, email, password_hash);
-
-    // send the response back to the client
-    const response = new APIResponse(201, user,"USER_REGISTERED_SUCCESSFULLY");
-    return res.status(response.statusCode).json(response);
-}
-
-export async function registerClient(req: Request, res: Response){
-    const {clientName, redirectUri} = req.body;
-    // check if received the required fields
-    if(!clientName || !redirectUri) throw APIError.badRequestError("MISSING_FIELDS");
-    // if received then pass it to the service to store the details
-    const client = await createClient(clientName, redirectUri);
-    console.log("client data:", client);
-    
-    const response = new APIResponse(201, client, "CLIENT_REGISTERED_SUCCESSFULLY");
-
-    return res.status(201).json(response);
-}
-
-export function authorizeClient(req: Request, res: Response){
+export async function authorizeClient(req: Request, res: Response){
     const {client_id, redirect_uri, response_type, state} = req.query;
 
     if(response_type !== "code") throw APIError.badRequestError("UNSUPPORTED_RESPONSE_TYPE")
@@ -363,7 +333,7 @@ export function authorizeClient(req: Request, res: Response){
         <h1 style="margin-top: 40px; font-size: 26px;">Sign in to ${existingClient.client_name}</h1>
 
         <h2>OpenPass will allow ${existingClient.client_name} to access info like email, name. Your password will not be revealed</h2>
-        <form method="POST" action="/login">
+        <form method="POST" action="/api/authlogin">
                 <input type="hidden" name="client_id" value="${client_id}">
                 <input type="hidden" name="redirect_uri" value="${redirect_uri}">
                 <input type="hidden" name="state" value="${state}">
@@ -378,3 +348,66 @@ export function authorizeClient(req: Request, res: Response){
         `)
 }
 
+export async function login(req: Request, res: Response){
+    const {client_id, redirect_uri, state, email, password} = req.body;
+
+    if(!client_id || !redirect_uri || !state || !email || !password) throw APIError.badRequestError("MISSING_PARAMS");
+
+    const existingUser = findUserByEmail(email as string);
+    
+    if(!existingUser) throw APIError.notFoundError("INVALID_USER");
+
+    // use bcrypt to compare the password
+    //@ts-ignore
+    const isMatch = await bcrypt.compare(password, existingUser.password_hash);
+    if(!isMatch) throw APIError.unAuthorizedError("INVALID_CREDENTIALS");
+
+    // generate authcode
+    // @ts-ignore
+    const authCode = generateAuthCode(client_id , existingUser.id , redirect_uri , state );
+
+    // redirect to redirect_uri with authcode and state
+    return res.status(302).redirect(`${redirect_uri}?code=${authCode.code}&state=${authCode.state}`);
+}
+
+export async function tokenExchange(req: Request, res: Response){
+    const {client_id, client_secret, code, redirect_uri} = req.body;
+
+    if(!client_id || !client_secret || !code || !redirect_uri) throw APIError.badRequestError("MISSING_FIELDS");
+
+    const client = findClientById(client_id);
+    if(!client) throw APIError.unAuthorizedError("INVALID_CLIENT");
+
+    const isSecretMatch = await bcrypt.compare(client_secret, client.client_secret_hash);
+    if(!isSecretMatch) throw APIError.unAuthorizedError("INVALID_CLIENT");
+
+    const hashedCode = hash(code);
+    const { user_id } = verifyAuthCode(hashedCode, redirect_uri);
+
+    const user = findUserById(user_id);
+    if (!user) throw APIError.notFoundError("USER_NOT_FOUND");
+
+    const activeKey = getActiveKey();
+    if (!activeKey) throw APIError.badRequestError("NO_SIGNING_KEY");
+
+    const ISSUER = process.env.ISSUER_URL || "http://localhost:4000";
+
+    const accessToken = jwt.sign(
+        { sub: user.id, email: user.email, name: user.name },
+        activeKey.private_key,
+        { algorithm: 'RS256', expiresIn: '1h', issuer: ISSUER, keyid: activeKey.kid }
+    );
+
+    const idToken = jwt.sign(
+        { sub: user.id, email: user.email, name: user.name, aud: client_id },
+        activeKey.private_key,
+        { algorithm: 'RS256', expiresIn: '1h', issuer: ISSUER, keyid: activeKey.kid }
+    );
+
+    return res.status(200).json({
+        access_token: accessToken,
+        id_token: idToken,
+        token_type: 'Bearer',
+        expires_in: 3600,
+    });
+}

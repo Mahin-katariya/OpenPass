@@ -8,7 +8,7 @@ export interface Users {
 }
 
 export interface Clients{
-    client_id: number,
+    client_id: string,
     client_name: string,
     client_secret_hash: string,
     redirect_uri: string,
@@ -23,7 +23,7 @@ export interface AuthCodes{
     redirect_uri: string,
     state: string,
     created_at: Date,
-    updated_at: Date
+    expires_at: Date
 }
 
 export interface RefreshTokens{
